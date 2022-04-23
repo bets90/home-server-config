@@ -7,7 +7,16 @@ networks:
       name: t2_proxy
   default:
     driver: bridge
-
+########################### SECRETS
+secrets:
+  authelia_jwt_secret:
+    file: $DOCKERDIR/secrets/authelia_jwt_secret  
+  authelia_session_secret:
+    file: $DOCKERDIR/secrets/authelia_session_secret
+  authelia_duo_api_secret_key:
+    file: $DOCKERDIR/secrets/authelia_duo_api_secret_key
+  authelia_storage_encryption_key:
+    file: $DOCKERDIR/secrets/authelia_storage_encryption_key        
 ########################### SERVICES
 services:
 # All services / apps go below this line
@@ -98,5 +107,37 @@ services:
       - "traefik.http.routers.traefik-rtr.service=api@internal"
         ## Middlewares
 #     - "traefik.http.routers.traefik-rtr.middlewares=middlewares-secure-headers@file,middlewares-rate-limit@file,middlewares-basic-auth@file" 
-      - "traefik.http.routers.traefik-rtr.middlewares=chain-basic-auth@file" 
-      
+#      - "traefik.http.routers.traefik-rtr.middlewares=chain-basic-auth@file" 
+      - "traefik.http.routers.traefik-rtr.middlewares=chain-authelia@file" 
+  
+ 
+  # Authelia (Lite) - Self-Hosted Single Sign-On and Two-Factor Authentication
+  authelia:
+    container_name: authelia
+    # image: authelia/authelia:latest
+    image: authelia/authelia:4.21.0
+    restart: always
+    networks:
+      - t2_proxy
+    volumes:
+      - $DOCKERDIR/authelia:/config
+    environment:
+      - TZ=$TZ
+      - AUTHELIA_JWT_SECRET_FILE=/run/secrets/authelia_jwt_secret
+      - AUTHELIA_SESSION_SECRET_FILE=/run/secrets/authelia_session_secret
+      - AUTHELIA_DUO_API_SECRET_KEY_FILE=/run/secrets/authelia_duo_api_secret_key
+    secrets:
+      - authelia_jwt_secret
+      - authelia_session_secret
+      - authelia_duo_api_secret_key
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.authelia-rtr.tls=true"      
+      - "traefik.http.routers.authelia-rtr.entrypoints=https"
+      - "traefik.http.routers.authelia-rtr.rule=Host(`authelia.$DOMAINNAME`) || Host(`authelia.home`)"
+      ## Middlewares
+      - "traefik.http.routers.authelia-rtr.middlewares=middlewares-secure-headers@file,middlewares-rate-limit@file"
+      ## HTTP Services
+      - "traefik.http.routers.authelia-rtr.service=authelia-svc"
+      - "traefik.http.services.authelia-svc.loadbalancer.server.port=9091"  
