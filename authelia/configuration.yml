@@ -33,14 +33,16 @@ access_control:
       policy: bypass
     - domain:
         - "*.berhane.me"
-        - "berhane.me"
-      policy: two_factor
-    - domain:
-        - "*.home"
         - "traefik.home"
+        - "berhane.me"
       policy: bypass
       networks:
         - 172.30.6.0/24
+        - 188.151.10.220    
+    - domain:
+        - "*.berhane.me"
+        - "berhane.me"
+      policy: two_factor
 
 session:
   name: authelia_session
