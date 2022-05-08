@@ -7,6 +7,9 @@ networks:
       name: t2_proxy
   default:
     driver: bridge
+  nextcloud:
+    name: nextcloud
+
 ########################### SECRETS
 secrets:
   authelia_jwt_secret:
@@ -19,6 +22,10 @@ secrets:
     file: $DOCKERDIR/secrets/authelia_storage_encryption_key        
   plex_claim:
     file: $DOCKERDIR/secrets/plex_claim
+  db_password:
+    file: $SECRETSDIR/db_password
+  db_root_password:
+    file: $SECRETSDIR/db_root_password
 ########################### SERVICES
 services:
 # All services / apps go below this line
@@ -41,7 +48,7 @@ services:
       - --log=true
       - --log.level=INFO # (Default: error) DEBUG, INFO, WARN, ERROR, FATAL, PANIC
       - --accessLog=true
-      - --accessLog.filePath=/traefik.log
+      - --accessLog.filePath=/access.log
       - --accessLog.bufferingSize=100 # Configuring a buffer of 100 lines
       - --accessLog.filters.statusCodes=400-499
       - --providers.docker=true
@@ -84,7 +91,7 @@ services:
       - $DOCKERDIR/traefik2/rules:/rules 
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - $DOCKERDIR/traefik2/acme/acme.json:/acme.json 
-      - $DOCKERDIR/traefik2/traefik.log:/traefik.log 
+      - $DOCKERDIR/traefik2/access.log:/access.log
       - $DOCKERDIR/shared:/shared
     environment:
       - PORKBUN_SECRET_API_KEY=$PORKBUN_SECRET_API_KEY
@@ -238,15 +245,15 @@ services:
       # TRANSMISSION_RPC_PASSWORD: $TRANSMISSION_RPC_PASSWORD
       # TRANSMISSION_RPC_USERNAME: $TRANSMISSION_RPC_USERNAME
       TRANSMISSION_UMASK: 002
-      TRANSMISSION_RATIO_LIMIT: 0.01
+      TRANSMISSION_RATIO_LIMIT: 0.1
       TRANSMISSION_RATIO_LIMIT_ENABLED: "true"
       TRANSMISSION_ALT_SPEED_DOWN: 40000
       TRANSMISSION_ALT_SPEED_ENABLED: "false"
       TRANSMISSION_ALT_SPEED_UP: 250
       TRANSMISSION_SPEED_LIMIT_DOWN: 80000
-      TRANSMISSION_SPEED_LIMIT_DOWN_ENABLED: "true"
+      TRANSMISSION_SPEED_LIMIT_DOWN_ENABLED: "false"
       TRANSMISSION_SPEED_LIMIT_UP: 500
-      TRANSMISSION_SPEED_LIMIT_UP_ENABLED: "true"
+      TRANSMISSION_SPEED_LIMIT_UP_ENABLED: "false"
       TRANSMISSION_INCOMPLETE_DIR: /data/downloads/torrents/incomplete
       TRANSMISSION_INCOMPLETE_DIR_ENABLED: "true"
       TRANSMISSION_WATCH_DIR: /data/downloads
@@ -295,11 +302,11 @@ services:
       - /dev/shm:/transcode
     environment:
       TZ: $TZ
-      HOSTNAME: "sPlex"
+      HOSTNAME: "plex.$DOMAINNAME"
       PLEX_CLAIM_FILE: /run/secrets/plex_claim
       PLEX_UID: $PUID
       PLEX_GID: $PGID
-      ADVERTISE_IP: https://plex.$DOMAINNAME:443/
+      ADVERTISE_IP: https://172.30.6.2:32400/
     secrets:
       - plex_claim
     labels:
@@ -399,3 +406,96 @@ services:
       - "traefik.http.routers.sonarr-rtr.service=sonarr-svc"
       - "traefik.http.routers.sonarr-rtr-bypass.service=sonarr-svc"
       - "traefik.http.services.sonarr-svc.loadbalancer.server.port=8989"
+  
+  # Nextcloud Docker Application
+  nextcloud:
+    image: nextcloud:21
+    container_name: nextcloud
+    hostname: nextcloud
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - t2_proxy
+      # Use an internal network for the nextcloud services
+      - nextcloud
+    ports:
+      # INSECURE - we will remove this later after completing a few more steps in this guide
+      - 8099:80
+    volumes:
+      - /etc/passwd:/etc/passwd:ro
+      - /etc/group:/etc/group:ro
+      - $DATADIR/nextcloud/nextcloud:/var/www/html
+      - $USERDIR/redis-session.ini:/usr/local/etc/php/conf.d/redis-session.ini
+
+    user: "65534:1000"
+    # Environment (internal to the container) variables to simplify setup
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      APACHE_RUN_USER: betselot
+      APACHE_RUN_GROUP: betselot
+      # Redis host name (container_name)
+      REDIS_HOST: nc-redis
+      NEXTCLOUD_TRUSTED_DOMAIN: nextcloud.$DOMAINNAME
+      TRUSTED_PROXIES: 172.18.0.0/16
+    labels:
+      # We set 'enable by default' to false, so this tells Traefik we want it to connect here
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.nextcloud.entrypoints=https"
+      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.$DOMAINNAME`)"
+      - "traefik.http.routers.nextcloud.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.nextcloud.middlewares=chain-nextcloud@file"
+      ## HTTP Services
+      - "traefik.http.routers.nextcloud.service=nextcloud-svc"
+      - "traefik.http.services.nextcloud-svc.loadbalancer.server.port=80"
+  # Nextcloud Database - Using MariaDB, but can also use MySQL or PostgreSQL
+  nextcloud-db:
+    # MariaDB 10.5 again not using latest to prevent future breakage
+    image: mariadb:10.5
+    # Set to allow easy Docker DNS name resolution - not strictly necessary
+    container_name: nc-db
+    hostname: nc-db
+    restart: unless-stopped
+    # Recommended database settings as listed in:
+    # https://docs.nextcloud.com/server/21/admin_manual/configuration_database/linux_database_configuration.html
+    command: --transaction-isolation=READ-COMMITTED --log-bin=msqyld-bin --binlog-format=ROW
+    networks:
+      - nextcloud
+    user: "65534:1000"
+    # Persistent volumes with bind mounts to easily move/backup data
+    volumes:
+      # I like to use the /opt folder to hold my Docker bind mounted volumes
+      - $DATADIR/nextcloud/nextcloud-db:/var/lib/mysql
+    # We add our secrets here
+    secrets:
+      - db_root_password
+      - db_password
+    # Environment (internal to the container) variables to simplify setup (notice the secrets used below)
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+
+      MYSQL_USER: nextcloud
+      MYSQL_DATABASE: nextcloud
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+      MYSQL_PASSWORD_FILE: /run/secrets/db_password
+  # Nextcloud (in memory) Redis Cache - speed up lookup transactions
+  # Speeds up Nextcloud by reducing the time spent "looking" for things
+  nc-redis:
+    # Official REDIS 6.2 image based upon alpine Linux (to keep it lightweight)
+    image: redis:6.2-alpine
+    container_name: nc-redis
+    hostname: nc-redis
+    restart: unless-stopped
+    networks:
+      - nextcloud
+    user: "65534:1000"
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+
+    volumes:
+      - $DATADIR/nextcloud/nextcloud-redis:/data
