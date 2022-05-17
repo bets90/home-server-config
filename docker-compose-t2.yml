@@ -180,7 +180,7 @@ services:
 # Portainer - WebUI for Containers
   portainer:
     container_name: portainer
-    image: portainer/portainer:latest
+    image: portainer/portainer-ce:latest
     restart: unless-stopped
     command: -H unix:///var/run/docker.sock
     networks:
@@ -213,8 +213,7 @@ services:
     container_name: transmission-vpn
     restart: unless-stopped
     networks:
-      t2_proxy:
-        ipv4_address: 172.18.41.45
+     - t2_proxy
     ports:
      - "$TRANSMISSION_PORT:9091"
     cap_add:
@@ -245,7 +244,7 @@ services:
       # TRANSMISSION_RPC_PASSWORD: $TRANSMISSION_RPC_PASSWORD
       # TRANSMISSION_RPC_USERNAME: $TRANSMISSION_RPC_USERNAME
       TRANSMISSION_UMASK: 002
-      TRANSMISSION_RATIO_LIMIT: 0.1
+      TRANSMISSION_RATIO_LIMIT: 0.01
       TRANSMISSION_RATIO_LIMIT_ENABLED: "true"
       TRANSMISSION_ALT_SPEED_DOWN: 40000
       TRANSMISSION_ALT_SPEED_ENABLED: "false"
@@ -409,7 +408,7 @@ services:
   
   # Nextcloud Docker Application
   nextcloud:
-    image: nextcloud:21
+    image: nextcloud:latest
     container_name: nextcloud
     hostname: nextcloud
     restart: unless-stopped
@@ -438,7 +437,7 @@ services:
       # Redis host name (container_name)
       REDIS_HOST: nc-redis
       NEXTCLOUD_TRUSTED_DOMAIN: nextcloud.$DOMAINNAME
-      TRUSTED_PROXIES: 172.18.0.0/16
+      TRUSTED_PROXIES: 172.19.0.0/16
     labels:
       # We set 'enable by default' to false, so this tells Traefik we want it to connect here
       - "traefik.enable=true"
