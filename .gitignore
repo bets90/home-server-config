@@ -1,3 +1,7 @@
 shared/.htpasswd
 *.log
-
+appdata/*
+*acme.json
+.env
+*.sqlite3
+.idea
