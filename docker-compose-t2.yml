@@ -496,8 +496,7 @@ services:
       ## HTTP Services
       - "traefik.http.routers.ombi-rtr.service=ombi-svc"
       - "traefik.http.services.ombi-svc.loadbalancer.server.port=3579"
-      
-
+ 
   # Nextcloud Docker Application
   nextcloud:
     image: nextcloud:latest
@@ -587,6 +586,5 @@ services:
     environment:
       PUID: $PUID
       PGID: $PGID
-
     volumes:
       - $DATADIR/nextcloud/nextcloud-redis:/data
