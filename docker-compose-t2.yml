@@ -3,8 +3,7 @@ version: "3.7"
 ########################### NETWORKS
 networks:
   t2_proxy:
-    external:
-      name: t2_proxy
+    name: t2_proxy
   default:
     driver: bridge
   nextcloud:
@@ -277,7 +276,7 @@ services:
       - t2_proxy
     security_opt:
       - no-new-privileges:true
-    # restart: no
+    restart: unless-stopped
     image: plexinc/pms-docker:public
     container_name: plexms
     ports:
@@ -405,7 +404,100 @@ services:
       - "traefik.http.routers.sonarr-rtr.service=sonarr-svc"
       - "traefik.http.routers.sonarr-rtr-bypass.service=sonarr-svc"
       - "traefik.http.services.sonarr-svc.loadbalancer.server.port=8989"
-  
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:develop
+    container_name: prowlarr
+    networks:
+      - t2_proxy
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    ports:
+      - "$PROWLARR_PORT:9696"
+    volumes:
+      - $DOCKERDIR/appdata/prowlarr:/config
+      - "/etc/localtime:/etc/localtime:ro"
+    environment:
+      TZ: $TZ
+      PUID: $PUID
+      PGID: $PGID
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers Auth
+      - "traefik.http.routers.prowlarr-rtr.tls=true"
+      - "traefik.http.routers.prowlarr-rtr.entrypoints=https"
+      - "traefik.http.routers.prowlarr-rtr.rule=Host(`prowlarr.$DOMAINNAME`)"
+      - "traefik.http.routers.prowlarr-rtr.priority=99"
+      ## Middlewares
+      - "traefik.http.routers.prowlarr-rtr.middlewares=chain-authelia@file"
+      ## HTTP Services
+      - "traefik.http.routers.prowlarr-rtr.service=prowlarr-svc"
+      - "traefik.http.services.prowlarr-svc.loadbalancer.server.port=9696"
+
+  jackett:
+    image: lscr.io/linuxserver/jackett:latest
+    container_name: jackett
+    networks:
+      - t2_proxy
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    ports:
+      - "$JACKETT_PORT:9117"
+
+    volumes:
+      - $DOCKERDIR/appdata/jackett:/config
+      - $DATADIR/downloads:/data/downloads
+      - "/etc/localtime:/etc/localtime:ro"
+    environment:
+      TZ: $TZ
+      PUID: $PUID
+      PGID: $PGID
+      AUTO_UPDATE: true
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers Auth
+      - "traefik.http.routers.jackett-rtr.tls=true"
+      - "traefik.http.routers.jackett-rtr.entrypoints=https"
+      - "traefik.http.routers.jackett-rtr.rule=Host(`jackett.$DOMAINNAME`)"
+      - "traefik.http.routers.jackett-rtr.priority=99"
+      ## Middlewares
+      - "traefik.http.routers.jackett-rtr.middlewares=chain-authelia@file"
+      ## HTTP Services
+      - "traefik.http.routers.jackett-rtr.service=jackett-svc"
+      - "traefik.http.services.jackett-svc.loadbalancer.server.port=9117"
+  ombi:
+    image: lscr.io/linuxserver/ombi:latest
+    container_name: ombi
+    networks:
+      - t2_proxy
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    ports:
+      - "$OMBI_PORT:3579"
+
+    volumes:
+      - $DOCKERDIR/appdata/ombi:/config
+      - "/etc/localtime:/etc/localtime:ro"
+    environment:
+      TZ: $TZ
+      PUID: $PUID
+      PGID: $PGID
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers Auth
+      - "traefik.http.routers.ombi-rtr.tls=true"
+      - "traefik.http.routers.ombi-rtr.entrypoints=https"
+      - "traefik.http.routers.ombi-rtr.rule=Host(`ombi.$DOMAINNAME`)"
+      - "traefik.http.routers.ombi-rtr.priority=99"
+      ## Middlewares
+      - "traefik.http.routers.ombi-rtr.middlewares=chain-authelia@file"
+      ## HTTP Services
+      - "traefik.http.routers.ombi-rtr.service=ombi-svc"
+      - "traefik.http.services.ombi-svc.loadbalancer.server.port=3579"
+      
+
   # Nextcloud Docker Application
   nextcloud:
     image: nextcloud:latest
